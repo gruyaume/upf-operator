@@ -10,10 +10,12 @@ from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServ
 from charms.upf_operator.v0.upf import UPFProvides
 from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent
+from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, Container, ModelError, WaitingStatus
 from ops.pebble import Layer
+
+from kubernetes import Kubernetes
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class UPFOperatorCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
+        self._kubernetes = Kubernetes(namespace=self.model.name)
         self._bessd_container_name = self._bessd_service_name = "bessd"
         self._routectl_container_name = self._routectl_service_name = "routectl"
         self._web_container_name = self._web_service_name = "web"
@@ -37,6 +40,7 @@ class UPFOperatorCharm(CharmBase):
         self._pfcp_agent_container = self.unit.get_container(self._pfcp_agent_container_name)
         self._upf_provides = UPFProvides(charm=self, relationship_name="upf")
         self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.bessd_pebble_ready, self._on_bessd_pebble_ready)
         self.framework.observe(self.on.routectl_pebble_ready, self._on_routectl_pebble_ready)
         self.framework.observe(self.on.web_pebble_ready, self._on_web_pebble_ready)
@@ -58,6 +62,12 @@ class UPFOperatorCharm(CharmBase):
             event.defer()
             return
         self._write_config_file()
+        self._kubernetes.create_network_attachment_definitions()
+        self._kubernetes.patch_statefulset(statefulset_name=self.app.name)
+
+    def _on_remove(self, event: RemoveEvent) -> None:
+        """Handle remove event."""
+        self._kubernetes.delete_network_attachment_definitions()
 
     def _on_upf_relation_joined(self, event: RelationJoinedEvent) -> None:
         try:

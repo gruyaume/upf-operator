@@ -11,11 +11,12 @@ from charm import UPFOperatorCharm
 
 
 class TestCharm(unittest.TestCase):
+    @patch("lightkube.core.client.GenericSyncClient")
     @patch(
         "charm.KubernetesServicePatch",
         lambda charm, ports: None,
     )
-    def setUp(self):
+    def setUp(self, patch_k8s_client):
         self.namespace = "whatever"
         self.harness = testing.Harness(UPFOperatorCharm)
         self.harness.set_model_name(name=self.namespace)
@@ -32,8 +33,31 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_install(event=Mock())
         patch_push.assert_called_with(
             path="/etc/bess/conf/upf.json",
-            source='{\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": false,\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  }\n}',  # noqa: E501
+            source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  },\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": false\n}',  # noqa: E501
         )
+
+    @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
+    @patch("ops.model.Container.push", new=Mock())
+    def test_given_can_connect_to_bessd_when_on_install_then_network_attachment_definition_is_created(  # noqa: E501
+        self,
+        patch_create_network_attachment_definitions,
+    ):
+        self.harness.set_can_connect(container="bessd", val=True)
+
+        self.harness.charm._on_install(event=Mock())
+
+        patch_create_network_attachment_definitions.assert_called_once()
+
+    @patch("kubernetes.Kubernetes.patch_statefulset")
+    @patch("ops.model.Container.push", new=Mock())
+    def test_given_can_connect_to_bessd_when_on_install_then_statefulset_is_patched(
+        self, patch_statefulset
+    ):
+        self.harness.set_can_connect(container="bessd", val=True)
+
+        self.harness.charm._on_install(event=Mock())
+
+        patch_statefulset.assert_called_once()
 
     @patch("ops.model.Container.exists")
     def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_pebble_plan_is_applied(
