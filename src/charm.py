@@ -4,11 +4,11 @@
 
 """Charmed operator for the 5G UPF service."""
 
-import json
 import logging
 
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.upf_operator.v0.upf import UPFProvides
+from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent
 from ops.main import main
@@ -71,19 +71,22 @@ class UPFOperatorCharm(CharmBase):
         self._update_upf_relation()
 
     def _write_config_file(self) -> None:
-        with open(f"src/{CONFIG_FILE_NAME}", "r") as f:
-            config = json.load(f)
+        jinja2_environment = Environment(loader=FileSystemLoader("src/templates/"))
+        template = jinja2_environment.get_template(f"{CONFIG_FILE_NAME}.j2")
+        content = template.render(
+            upf_hostname=self._upf_hostname,
+        )
         self._bessd_container.push(
-            path=f"{BESSD_CONTAINER_CONFIG_PATH}/{CONFIG_FILE_NAME}", source=json.dumps(config)
+            path=f"{BESSD_CONTAINER_CONFIG_PATH}/{CONFIG_FILE_NAME}", source=content
         )
         logger.info(f"Pushed {CONFIG_FILE_NAME} config file")
 
     def _update_upf_relation(self):
         """Update the UPF relation with the URL of the UPF service."""
-        self._upf_provides.set_info(url=self._upf_url)
+        self._upf_provides.set_info(url=self._upf_hostname)
 
     @property
-    def _upf_url(self) -> str:
+    def _upf_hostname(self) -> str:
         return f"{self.model.app.name}.{self.model.name}.svc.cluster.local"
 
     @property

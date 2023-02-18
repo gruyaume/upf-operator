@@ -32,7 +32,7 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_install(event=Mock())
         patch_push.assert_called_with(
             path="/etc/bess/conf/upf.json",
-            source='{"mode": "af_packet", "hwcksum": true, "log_level": "trace", "gtppsc": true, "measure_upf": false, "cpiface": {"dnn": "internet", "hostname": "upf", "enable_ue_ip_alloc": false, "http_port": "8080"}}',  # noqa: E501
+            source='{\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": false,\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  }\n}',  # noqa: E501
         )
 
     @patch("ops.model.Container.exists")
