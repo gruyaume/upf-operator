@@ -16,7 +16,9 @@ class TestCharm(unittest.TestCase):
         lambda charm, ports: None,
     )
     def setUp(self):
+        self.namespace = "whatever"
         self.harness = testing.Harness(UPFOperatorCharm)
+        self.harness.set_model_name(name=self.namespace)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
@@ -135,3 +137,20 @@ class TestCharm(unittest.TestCase):
         self.harness.container_pebble_ready("pfcp-agent")
 
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+
+    @patch("ops.model.Container.exists")
+    def test_given_bessd_service_is_running_when_upf_relation_joins_then_upf_info_is_added_to_relation_data(  # noqa: E501
+        self, patch_exists
+    ):
+        patch_exists.return_value = True
+        self.harness.set_leader(is_leader=True)
+        self.harness.container_pebble_ready(container_name="bessd")
+        relation_id = self.harness.add_relation(relation_name="upf", remote_app="smf")
+
+        self.harness.add_relation_unit(relation_id, "smf/0")
+
+        relation_data = self.harness.get_relation_data(
+            relation_id=relation_id, app_or_unit=self.harness.model.app
+        )
+
+        assert relation_data["url"] == "upf-operator.whatever.svc.cluster.local"

@@ -8,8 +8,9 @@ import json
 import logging
 
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
+from charms.upf_operator.v0.upf import UPFProvides
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent
+from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent
 from ops.main import main
 from ops.model import ActiveStatus, Container, ModelError, WaitingStatus
 from ops.pebble import Layer
@@ -34,11 +35,13 @@ class UPFOperatorCharm(CharmBase):
         self._routectl_container = self.unit.get_container(self._routectl_container_name)
         self._web_container = self.unit.get_container(self._web_container_name)
         self._pfcp_agent_container = self.unit.get_container(self._pfcp_agent_container_name)
+        self._upf_provides = UPFProvides(charm=self, relationship_name="upf")
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.bessd_pebble_ready, self._on_bessd_pebble_ready)
         self.framework.observe(self.on.routectl_pebble_ready, self._on_routectl_pebble_ready)
         self.framework.observe(self.on.web_pebble_ready, self._on_web_pebble_ready)
         self.framework.observe(self.on.pfcp_agent_pebble_ready, self._on_pfcp_agent_pebble_ready)
+        self.framework.observe(self.on.upf_relation_joined, self._on_upf_relation_joined)
         self._service_patcher = KubernetesServicePatch(
             charm=self,
             ports=[
@@ -56,6 +59,17 @@ class UPFOperatorCharm(CharmBase):
             return
         self._write_config_file()
 
+    def _on_upf_relation_joined(self, event: RelationJoinedEvent) -> None:
+        try:
+            upf_service = self._bessd_container.get_service(service_name=self._bessd_service_name)
+        except ModelError:
+            logger.info("UPF `bessd` service not found")
+            return
+        if not upf_service.is_running():
+            logger.info("UPF `bessd` service is not running")
+            return
+        self._update_upf_relation()
+
     def _write_config_file(self) -> None:
         with open(f"src/{CONFIG_FILE_NAME}", "r") as f:
             config = json.load(f)
@@ -63,6 +77,14 @@ class UPFOperatorCharm(CharmBase):
             path=f"{BESSD_CONTAINER_CONFIG_PATH}/{CONFIG_FILE_NAME}", source=json.dumps(config)
         )
         logger.info(f"Pushed {CONFIG_FILE_NAME} config file")
+
+    def _update_upf_relation(self):
+        """Update the UPF relation with the URL of the UPF service."""
+        self._upf_provides.set_info(url=self._upf_url)
+
+    @property
+    def _upf_url(self) -> str:
+        return f"{self.model.app.name}.{self.model.name}.svc.cluster.local"
 
     @property
     def _bessd_config_file_is_written(self) -> bool:
@@ -96,6 +118,7 @@ class UPFOperatorCharm(CharmBase):
         self._bessd_container.add_layer("upf", self._bessd_pebble_layer, combine=True)
         self._bessd_container.replan()
         self._set_application_status()
+        self._update_upf_relation()
 
     def _on_routectl_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Handle routectl Pebble ready event."""
