@@ -63,3 +63,7 @@ storage:
   shared-app:
     type: filesystem
     minimum-size: 1M
+
+provides:
+  upf:
+    interface: upf

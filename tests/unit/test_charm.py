@@ -11,12 +11,15 @@ from charm import UPFOperatorCharm
 
 
 class TestCharm(unittest.TestCase):
+    @patch("lightkube.core.client.GenericSyncClient")
     @patch(
         "charm.KubernetesServicePatch",
         lambda charm, ports: None,
     )
-    def setUp(self):
+    def setUp(self, patch_k8s_client):
+        self.namespace = "whatever"
         self.harness = testing.Harness(UPFOperatorCharm)
+        self.harness.set_model_name(name=self.namespace)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
@@ -30,8 +33,31 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_install(event=Mock())
         patch_push.assert_called_with(
             path="/etc/bess/conf/upf.json",
-            source='{"mode": "af_packet", "hwcksum": true, "log_level": "trace", "gtppsc": true, "measure_upf": false, "cpiface": {"dnn": "internet", "hostname": "upf", "enable_ue_ip_alloc": false, "http_port": "8080"}}',  # noqa: E501
+            source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  },\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": true,\n  "enable_notify_bess": false,\n  "max_sessions": 50000,\n  "measure_flow": false,\n  "qci_qos_config": [\n    {\n      "burst_duration_ms": 10,\n      "cbs": 50000,\n      "ebs": 50000,\n      "pbs": 50000,\n      "priority": 7,\n      "qci": 0\n    }\n  ],\n  "slice_rate_limit_config": {\n    "n3_bps": 1000000000,\n    "n3_burst_bytes": 12500000,\n    "n6_bps": 1000000000,\n    "n6_burst_bytes": 12500000\n  },\n  "table_sizes": {\n    "appQERLookup": 200000,\n    "farLookup": 150000,\n    "pdrLookup": 50000,\n    "sessionQERLookup": 100000\n  },\n  "workers": 1\n}',  # noqa: E501
         )
+
+    @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
+    @patch("ops.model.Container.push", new=Mock())
+    def test_given_can_connect_to_bessd_when_on_install_then_network_attachment_definition_is_created(  # noqa: E501
+        self,
+        patch_create_network_attachment_definitions,
+    ):
+        self.harness.set_can_connect(container="bessd", val=True)
+
+        self.harness.charm._on_install(event=Mock())
+
+        patch_create_network_attachment_definitions.assert_called_once()
+
+    @patch("kubernetes.Kubernetes.patch_statefulset")
+    @patch("ops.model.Container.push", new=Mock())
+    def test_given_can_connect_to_bessd_when_on_install_then_statefulset_is_patched(
+        self, patch_statefulset
+    ):
+        self.harness.set_can_connect(container="bessd", val=True)
+
+        self.harness.charm._on_install(event=Mock())
+
+        patch_statefulset.assert_called_once()
 
     @patch("ops.model.Container.exists")
     def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_pebble_plan_is_applied(
@@ -135,3 +161,20 @@ class TestCharm(unittest.TestCase):
         self.harness.container_pebble_ready("pfcp-agent")
 
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+
+    @patch("ops.model.Container.exists")
+    def test_given_bessd_service_is_running_when_upf_relation_joins_then_upf_info_is_added_to_relation_data(  # noqa: E501
+        self, patch_exists
+    ):
+        patch_exists.return_value = True
+        self.harness.set_leader(is_leader=True)
+        self.harness.container_pebble_ready(container_name="bessd")
+        relation_id = self.harness.add_relation(relation_name="upf", remote_app="smf")
+
+        self.harness.add_relation_unit(relation_id, "smf/0")
+
+        relation_data = self.harness.get_relation_data(
+            relation_id=relation_id, app_or_unit=self.harness.model.app
+        )
+
+        assert relation_data["url"] == "upf-operator.whatever.svc.cluster.local"
