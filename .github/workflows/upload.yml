@@ -23,4 +23,4 @@ jobs:
         env:
           CHARMCRAFT_AUTH: "${{ secrets.CHARMCRAFT_AUTH }}"
         run: |
-          charmcraft publish-lib charms.upf_operator.v0.nrf
+          charmcraft publish-lib charms.upf_operator.v0.upf
