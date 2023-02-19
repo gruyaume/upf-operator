@@ -13,7 +13,7 @@ from lightkube.models.core_v1 import ServicePort
 from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent, RemoveEvent
 from ops.main import main
 from ops.model import ActiveStatus, Container, ModelError, WaitingStatus
-from ops.pebble import Layer
+from ops.pebble import ExecError, Layer
 
 from kubernetes import Kubernetes
 
@@ -62,6 +62,7 @@ class UPFOperatorCharm(CharmBase):
             event.defer()
             return
         self._write_config_file()
+        self._write_poststart_script()
         self._kubernetes.create_network_attachment_definitions()
         self._kubernetes.patch_statefulset(statefulset_name=self.app.name)
 
@@ -91,6 +92,16 @@ class UPFOperatorCharm(CharmBase):
         )
         logger.info(f"Pushed {CONFIG_FILE_NAME} config file")
 
+    def _write_poststart_script(self) -> None:
+        with open("src/bessd-poststart.sh", "r") as f:
+            content = f.read()
+        self._bessd_container.push(
+            path=f"{BESSD_CONTAINER_CONFIG_PATH}/bessd-poststart.sh",
+            source=content,
+            permissions=0o755,
+        )
+        logger.info("Pushed bessd-poststart.sh startup file")
+
     def _update_upf_relation(self):
         """Update the UPF relation with the URL of the UPF service."""
         self._upf_provides.set_info(url=self._upf_hostname)
@@ -106,6 +117,15 @@ class UPFOperatorCharm(CharmBase):
             logger.info(f"Config file is not written: {CONFIG_FILE_NAME}")
             return False
         logger.info("Config file is written")
+        return True
+
+    @property
+    def _podstart_file_is_written(self) -> bool:
+        """Returns whether the podstart file was written to the workload container."""
+        if not self._bessd_container.exists(f"{BESSD_CONTAINER_CONFIG_PATH}/bessd-poststart.sh"):
+            logger.info("Startup file is not written: bessd-poststart.sh")
+            return False
+        logger.info("Startup file is written")
         return True
 
     @property
@@ -128,10 +148,29 @@ class UPFOperatorCharm(CharmBase):
         if not self._bessd_config_file_is_written:
             self.unit.status = WaitingStatus("Waiting for config file to be written")
             return
+        if not self._podstart_file_is_written:
+            self.unit.status = WaitingStatus("Waiting for podstart file to be written")
+            return
         self._bessd_container.add_layer("upf", self._bessd_pebble_layer, combine=True)
         self._bessd_container.replan()
+        self._execute_bessd_poststart_script()
         self._set_application_status()
         self._update_upf_relation()
+
+    def _execute_bessd_poststart_script(self) -> None:
+        """Execute the bessd-poststart.sh script."""
+        process = self._bessd_container.exec(
+            command=["/bin/bash", "-c", f"{BESSD_CONTAINER_CONFIG_PATH}/bessd-poststart.sh"],
+            environment=self._bessd_environment_variables,
+        )
+        try:
+            process.wait_output()
+        except ExecError as e:
+            logger.error("Exited with code %d. Stderr:", e.exit_code)
+            for line in e.stderr.splitlines():  # type: ignore[union-attr]
+                logger.error("    %s", line)
+            raise e
+        logger.info("Successfully ran bessd startup script")
 
     def _on_routectl_pebble_ready(self, event: PebbleReadyEvent) -> None:
         """Handle routectl Pebble ready event."""
