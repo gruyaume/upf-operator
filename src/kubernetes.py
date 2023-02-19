@@ -5,6 +5,8 @@
 
 import json
 import logging
+import signal
+import sys
 
 import httpx
 from lightkube import Client
@@ -108,6 +110,14 @@ class Kubernetes:
             return False
         return False
 
+    def _handle_pod_termination(self, *args) -> None:
+        logger.debug(
+            "KubernetesComputeResourcesPatch's signal handler caught a SIGTERM, likely due to "
+            "pod termination during execution of `install`. Exiting gracefully. "
+            "The hook being executed will be re-run by Juju once the pod is re-scheduled."
+        )
+        sys.exit(0)
+
     def patch_statefulset(self, statefulset_name: str) -> None:
         """Patches a statefulset with multus annotation.
 
@@ -141,6 +151,13 @@ class Kubernetes:
         statefulset.spec.template.metadata.annotations["k8s.v1.cni.cncf.io/networks"] = json.dumps(
             multus_annotation
         )
+
+        # If it's not patched already, add a handler for SIGTERM prior to patching.
+        # Juju tries to send a SIGTERM to the CRI to exit gracefully when in CAAS mode, then
+        # the hook is re-executed, so we can "safely" trap it here without causing a hook
+        # failure if there is a race, and install will retry (after it is applied and
+        # the pod is rescheduled)
+        signal.signal(signal.SIGTERM, self._handle_pod_termination)
 
         self.client.patch(
             res=StatefulSet,

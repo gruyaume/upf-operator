@@ -33,7 +33,7 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._on_install(event=Mock())
         patch_push.assert_called_with(
             path="/etc/bess/conf/upf.json",
-            source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  },\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": false\n}',  # noqa: E501
+            source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  },\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": true,\n  "enable_notify_bess": false,\n  "max_sessions": 50000,\n  "measure_flow": false,\n  "qci_qos_config": [\n    {\n      "burst_duration_ms": 10,\n      "cbs": 50000,\n      "ebs": 50000,\n      "pbs": 50000,\n      "priority": 7,\n      "qci": 0\n    }\n  ],\n  "slice_rate_limit_config": {\n    "n3_bps": 1000000000,\n    "n3_burst_bytes": 12500000,\n    "n6_bps": 1000000000,\n    "n6_burst_bytes": 12500000\n  },\n  "table_sizes": {\n    "appQERLookup": 200000,\n    "farLookup": 150000,\n    "pdrLookup": 50000,\n    "sessionQERLookup": 100000\n  },\n  "workers": 1\n}',  # noqa: E501
         )
 
     @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
