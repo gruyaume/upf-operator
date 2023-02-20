@@ -207,3 +207,17 @@ class TestCharm(unittest.TestCase):
         )
 
         assert relation_data["url"] == "upf-operator.whatever.svc.cluster.local"
+
+    def test_given_cant_connect_to_bessd_when_upf_relation_joins_then_relation_data_is_not_updated(
+        self,
+    ):
+        self.harness.set_can_connect(container="bessd", val=False)
+
+        relation_id = self.harness.add_relation(relation_name="upf", remote_app="smf")
+        self.harness.add_relation_unit(relation_id, "smf/0")
+
+        relation_data = self.harness.get_relation_data(
+            relation_id=relation_id, app_or_unit=self.harness.model.app
+        )
+
+        assert relation_data == {}
