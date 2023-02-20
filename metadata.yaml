@@ -67,3 +67,5 @@ storage:
 provides:
   upf:
     interface: upf
+  metrics-endpoint:
+    interface: prometheus_scrape

@@ -7,6 +7,7 @@
 import logging
 
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
+from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.upf_operator.v0.upf import UPFProvides
 from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 BESSD_CONTAINER_CONFIG_PATH = "/etc/bess/conf"
 PFCP_AGENT_CONTAINER_CONFIG_PATH = "/tmp/conf"
 CONFIG_FILE_NAME = "upf.json"
+PROMETHEUS_PORT = 8080
 
 
 class UPFOperatorCharm(CharmBase):
@@ -46,12 +48,20 @@ class UPFOperatorCharm(CharmBase):
         self.framework.observe(self.on.web_pebble_ready, self._on_web_pebble_ready)
         self.framework.observe(self.on.pfcp_agent_pebble_ready, self._on_pfcp_agent_pebble_ready)
         self.framework.observe(self.on.upf_relation_joined, self._on_upf_relation_joined)
+        self._metrics_endpoint = MetricsEndpointProvider(
+            self,
+            jobs=[
+                {
+                    "static_configs": [{"targets": [f"*:{PROMETHEUS_PORT}"]}],
+                }
+            ],
+        )
         self._service_patcher = KubernetesServicePatch(
             charm=self,
             ports=[
                 ServicePort(name="pfcp", port=8805, protocol="UDP"),
                 ServicePort(name="bess-web", port=8000),
-                ServicePort(name="prometheus-exporter", port=8080),
+                ServicePort(name="prometheus-exporter", port=PROMETHEUS_PORT),
             ],
         )
 
