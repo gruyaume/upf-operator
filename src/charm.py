@@ -81,13 +81,7 @@ class UPFOperatorCharm(CharmBase):
         self._kubernetes.delete_network_attachment_definitions()
 
     def _on_upf_relation_joined(self, event: RelationJoinedEvent) -> None:
-        try:
-            upf_service = self._bessd_container.get_service(service_name=self._bessd_service_name)
-        except ModelError:
-            logger.info("UPF `bessd` service not found")
-            return
-        if not upf_service.is_running():
-            logger.info("UPF `bessd` service is not running")
+        if not self._bessd_service_is_running:
             return
         self._update_upf_relation()
 
