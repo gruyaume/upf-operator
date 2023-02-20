@@ -151,11 +151,14 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
-    def test_given_can_connect_when_pfcp_agent_pebble_ready_then_pebble_plan_is_applied(
-        self, patch_exists
+    def test_given_bessd_service_is_running_when_pfcp_agent_pebble_ready_then_pebble_plan_is_applied(  # noqa: E501
+        self,
+        patch_exists,
     ):
         patch_exists.return_value = True
+        self.harness.container_pebble_ready(container_name="bessd")
 
         self.harness.container_pebble_ready(container_name="pfcp-agent")
 

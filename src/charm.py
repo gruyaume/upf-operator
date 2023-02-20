@@ -200,10 +200,22 @@ class UPFOperatorCharm(CharmBase):
             return
         if not self._pfcp_agent_config_file_is_written:
             self.unit.status = WaitingStatus("Waiting for config file to be written")
+            event.defer()
+            return
+        if not self._bessd_service_is_running:
+            self.unit.status = WaitingStatus("Waiting for bessd service to be running")
+            event.defer()
             return
         self._pfcp_agent_container.add_layer("pfcp", self._pfcp_agent_pebble_layer, combine=True)
         self._pfcp_agent_container.replan()
         self._set_application_status()
+
+    @property
+    def _bessd_service_is_running(self) -> bool:
+        """Returns whether the bessd service is running."""
+        if not self._service_is_running(self._bessd_container, self._bessd_service_name):
+            return False
+        return True
 
     def _set_application_status(self) -> None:
         """Set the application status based on container services being running."""
