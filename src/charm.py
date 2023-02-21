@@ -81,7 +81,7 @@ class UPFOperatorCharm(CharmBase):
         self._kubernetes.delete_network_attachment_definitions()
 
     def _on_upf_relation_joined(self, event: RelationJoinedEvent) -> None:
-        if not self._bessd_service_is_running:
+        if not self._service_is_running(self._bessd_container, self._bessd_service_name):
             return
         self._update_upf_relation()
 
@@ -206,20 +206,13 @@ class UPFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for config file to be written")
             event.defer()
             return
-        if not self._bessd_service_is_running:
+        if not self._service_is_running(self._bessd_container, self._bessd_service_name):
             self.unit.status = WaitingStatus("Waiting for bessd service to be running")
             event.defer()
             return
         self._pfcp_agent_container.add_layer("pfcp", self._pfcp_agent_pebble_layer, combine=True)
         self._pfcp_agent_container.replan()
         self._set_application_status()
-
-    @property
-    def _bessd_service_is_running(self) -> bool:
-        """Returns whether the bessd service is running."""
-        if not self._service_is_running(self._bessd_container, self._bessd_service_name):
-            return False
-        return True
 
     def _set_application_status(self) -> None:
         """Set the application status based on container services being running."""
