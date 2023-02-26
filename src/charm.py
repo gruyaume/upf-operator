@@ -11,7 +11,13 @@ from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.upf_operator.v0.upf import UPFProvides
 from jinja2 import Environment, FileSystemLoader
 from lightkube.models.core_v1 import ServicePort
-from ops.charm import CharmBase, InstallEvent, PebbleReadyEvent, RelationJoinedEvent, RemoveEvent
+from ops.charm import (
+    CharmBase,
+    ConfigChangedEvent,
+    PebbleReadyEvent,
+    RelationJoinedEvent,
+    RemoveEvent,
+)
 from ops.main import main
 from ops.model import ActiveStatus, Container, ModelError, WaitingStatus
 from ops.pebble import ExecError, Layer
@@ -41,7 +47,7 @@ class UPFOperatorCharm(CharmBase):
         self._web_container = self.unit.get_container(self._web_container_name)
         self._pfcp_agent_container = self.unit.get_container(self._pfcp_agent_container_name)
         self._upf_provides = UPFProvides(charm=self, relationship_name="upf")
-        self.framework.observe(self.on.install, self._on_install)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.bessd_pebble_ready, self._on_bessd_pebble_ready)
         self.framework.observe(self.on.routectl_pebble_ready, self._on_routectl_pebble_ready)
@@ -65,16 +71,23 @@ class UPFOperatorCharm(CharmBase):
             ],
         )
 
-    def _on_install(self, event: InstallEvent) -> None:
-        """Handle install event."""
+    def _on_config_changed(self, event: ConfigChangedEvent) -> None:
+        if self._use_sriov:
+            raise NotImplementedError("SR-IOV support is not implemented yet")
+        if self._use_hugepages:
+            raise NotImplementedError("Hugepages support is not implemented yet")
         if not self._bessd_container.can_connect():
             self.unit.status = WaitingStatus("Waiting for container to be ready")
             event.defer()
             return
-        self._write_config_file()
+        self._write_config_file(use_sriov=self._use_sriov)
         self._write_poststart_script()
-        self._kubernetes.create_network_attachment_definitions()
-        self._kubernetes.patch_statefulset(statefulset_name=self.app.name)
+        self._kubernetes.create_network_attachment_definitions(use_sriov=self._use_sriov)
+        self._kubernetes.patch_statefulset(
+            statefulset_name=self.app.name,
+            use_sriov=self._use_sriov,
+            use_hugepages=self._use_hugepages,
+        )
 
     def _on_remove(self, event: RemoveEvent) -> None:
         """Handle remove event."""
@@ -85,11 +98,13 @@ class UPFOperatorCharm(CharmBase):
             return
         self._update_upf_relation()
 
-    def _write_config_file(self) -> None:
+    def _write_config_file(self, use_sriov: bool = False) -> None:
+        """Write the configuration file for the 5G UPF service."""
         jinja2_environment = Environment(loader=FileSystemLoader("src/templates/"))
         template = jinja2_environment.get_template(f"{CONFIG_FILE_NAME}.j2")
         content = template.render(
             upf_hostname=self._upf_hostname,
+            mode="dpdk" if use_sriov else "af_packet",
         )
         self._bessd_container.push(
             path=f"{BESSD_CONTAINER_CONFIG_PATH}/{CONFIG_FILE_NAME}", source=content
@@ -109,6 +124,16 @@ class UPFOperatorCharm(CharmBase):
     def _update_upf_relation(self):
         """Update the UPF relation with the URL of the UPF service."""
         self._upf_provides.set_info(url=self._upf_hostname)
+
+    @property
+    def _use_sriov(self) -> bool:
+        """Return whether SR-IOV should be used."""
+        return bool(self.model.config["use-sriov"])
+
+    @property
+    def _use_hugepages(self) -> bool:
+        """Return whether Hugepages should be used."""
+        return bool(self.model.config["use-hugepages"])
 
     @property
     def _upf_hostname(self) -> str:
@@ -239,9 +264,7 @@ class UPFOperatorCharm(CharmBase):
             service = container.get_service(service_name)
         except ModelError:
             return False
-        if not service.is_running():
-            return False
-        return True
+        return service.is_running()
 
     def _relation_created(self, relation_name: str) -> bool:
         """Returns whether a given Juju relation was crated.
