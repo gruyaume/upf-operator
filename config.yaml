@@ -1,0 +1,9 @@
+options:
+  use-sriov:
+    type: boolean
+    default: false
+    description: (SRIOV NOT YET IMPLEMENTED, ONLY "false" IS SUPPORTED!) Use SR-IOV Network Device Plugin.
+  use-hugepages:
+    type: boolean
+    default: false
+    description: (HUGEPAGES NOT YET IMPLEMENTED, ONLY "false" IS SUPPORTED!) Use Hugepages.

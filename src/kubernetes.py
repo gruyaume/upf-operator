@@ -46,18 +46,19 @@ class Kubernetes:
         self.client.create(obj=network_attachment_definition, namespace=self.namespace)  # type: ignore[call-overload]  # noqa: E501
         logger.info(f"NetworkAttachmentDefinition {name} created")
 
-    def create_network_attachment_definitions(self) -> None:
+    def create_network_attachment_definitions(self, use_sriov: bool = False) -> None:
         """Creates network attachment definitions.
 
         Returns:
             None
         """
+        multus_interface_type = "macvlan"
         if not self.network_attachment_definition_created(
             name=ACCESS_NETWORK_ATTACHMENT_DEFINITION_NAME
         ):
             access_interface_config = {
                 "cniVersion": "0.3.1",
-                "type": "macvlan",
+                "type": multus_interface_type,
                 "ipam": {"type": "static"},
                 "capabilities": {"mac": True},
             }
@@ -71,7 +72,7 @@ class Kubernetes:
         ):
             core_interface_config = {
                 "cniVersion": "0.3.1",
-                "type": "macvlan",
+                "type": multus_interface_type,
                 "ipam": {"type": "static"},
                 "capabilities": {"mac": True},
             }
@@ -118,7 +119,9 @@ class Kubernetes:
         )
         sys.exit(0)
 
-    def patch_statefulset(self, statefulset_name: str) -> None:
+    def patch_statefulset(
+        self, statefulset_name: str, use_sriov: bool = False, use_hugepages: bool = False
+    ) -> None:
         """Patches a statefulset with multus annotation.
 
         Args:

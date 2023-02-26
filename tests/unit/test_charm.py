@@ -23,14 +23,52 @@ class TestCharm(unittest.TestCase):
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
+    def test_given_use_sriov_config_when_config_changed_then_not_implemented_error_is_raised(self):
+        config = {"use-sriov": True}
+
+        with self.assertRaises(NotImplementedError):
+            self.harness.update_config(key_values=config)
+
+    def test_given_use_hugepages_when_config_changed_then_not_implemented_error_is_raised(self):
+        config = {"use-hugepages": True}
+
+        with self.assertRaises(NotImplementedError):
+            self.harness.update_config(key_values=config)
+
+    @patch("ops.model.Container.push", new=Mock())
+    @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
+    @patch("kubernetes.Kubernetes.patch_statefulset")
+    def test_given_default_config_when_config_changed_then_statefulset_is_patched(
+        self,
+        patch_statefulset,
+        create_network_attachment_definitions,
+    ):
+        self.harness.set_can_connect(container="bessd", val=True)
+        config = {
+            "use-sriov": False,
+            "use-hugepages": False,
+        }
+
+        self.harness.update_config(key_values=config)
+
+        create_network_attachment_definitions.assert_called_once_with(use_sriov=False)
+        patch_statefulset.assert_called_once_with(
+            statefulset_name="upf-operator", use_sriov=False, use_hugepages=False
+        )
+
     @patch("ops.model.Container.push")
-    def test_given_can_connect_to_bessd_workload_container_when_install_then_config_file_is_written(
+    def test_given_can_connect_to_bessd_workload_container_when_config_changed_then_config_file_is_written(  # noqa: E501
         self,
         patch_push,
     ):
         self.harness.set_can_connect(container="bessd", val=True)
+        config = {
+            "use-sriov": False,
+            "use-hugepages": False,
+        }
 
-        self.harness.charm._on_install(event=Mock())
+        self.harness.update_config(key_values=config)
+
         patch_push.assert_has_calls(
             [
                 call(
@@ -44,29 +82,6 @@ class TestCharm(unittest.TestCase):
                 ),
             ]
         )
-
-    @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
-    @patch("ops.model.Container.push", new=Mock())
-    def test_given_can_connect_to_bessd_when_on_install_then_network_attachment_definition_is_created(  # noqa: E501
-        self,
-        patch_create_network_attachment_definitions,
-    ):
-        self.harness.set_can_connect(container="bessd", val=True)
-
-        self.harness.charm._on_install(event=Mock())
-
-        patch_create_network_attachment_definitions.assert_called_once()
-
-    @patch("kubernetes.Kubernetes.patch_statefulset")
-    @patch("ops.model.Container.push", new=Mock())
-    def test_given_can_connect_to_bessd_when_on_install_then_statefulset_is_patched(
-        self, patch_statefulset
-    ):
-        self.harness.set_can_connect(container="bessd", val=True)
-
-        self.harness.charm._on_install(event=Mock())
-
-        patch_statefulset.assert_called_once()
 
     @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
