@@ -109,16 +109,55 @@ class TestCharm(unittest.TestCase):
 
     @patch("ops.model.Container.exec")
     @patch("ops.model.Container.exists")
-    def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_podstart_is_executed(
+    def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_initial_commands_are_executed(
         self, patch_exists, patch_exec
     ):
         patch_exists.return_value = True
 
         self.harness.container_pebble_ready(container_name="bessd")
 
-        patch_exec.assert_called_once_with(
-            command=["/bin/bash", "-c", "/etc/bess/conf/bessd-poststart.sh"],
-            environment={"CONF_FILE": "/etc/bess/conf/upf.json"},
+        patch_exec.assert_has_calls(
+            calls=[
+                call(
+                    command=["ip", "route", "replace", "192.168.251.0/24", "via", "192.168.252.1"],
+                    timeout=30,
+                ),
+                call().wait_output(),
+                call(
+                    command=[
+                        "ip",
+                        "route",
+                        "replace",
+                        "default",
+                        "via",
+                        "192.168.250.1",
+                        "metric",
+                        "110",
+                    ],
+                    timeout=30,
+                ),
+                call().wait_output(),
+                call(
+                    command=[
+                        "iptables",
+                        "-I",
+                        "OUTPUT",
+                        "-p",
+                        "icmp",
+                        "--icmp-type",
+                        "port-unreachable",
+                        "-j",
+                        "DROP",
+                    ],
+                    timeout=30,
+                ),
+                call().wait_output(),
+                call(
+                    command=["/bin/bash", "-c", "/etc/bess/conf/bessd-poststart.sh"],
+                    environment={"CONF_FILE": "/etc/bess/conf/upf.json"},
+                ),
+                call().wait_output(),
+            ],
         )
 
     @patch("ops.model.Container.exists")

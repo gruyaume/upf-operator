@@ -12,6 +12,7 @@ import httpx
 from lightkube import Client
 from lightkube.core.exceptions import ApiError
 from lightkube.generic_resource import create_namespaced_resource
+from lightkube.models.core_v1 import Capabilities
 from lightkube.models.meta_v1 import ObjectMeta
 from lightkube.resources.apps_v1 import StatefulSet
 from lightkube.types import PatchType
@@ -153,6 +154,12 @@ class Kubernetes:
 
         statefulset.spec.template.metadata.annotations["k8s.v1.cni.cncf.io/networks"] = json.dumps(
             multus_annotation
+        )
+        statefulset.spec.template.spec.containers[1].securityContext.privileged = True
+        statefulset.spec.template.spec.containers[1].securityContext.capabilities = Capabilities(
+            add=[
+                "NET_ADMIN",
+            ]
         )
 
         # If it's not patched already, add a handler for SIGTERM prior to patching.

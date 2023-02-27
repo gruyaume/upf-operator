@@ -180,11 +180,69 @@ class UPFOperatorCharm(CharmBase):
         if not self._podstart_file_is_written:
             self.unit.status = WaitingStatus("Waiting for podstart file to be written")
             return
+        self._prepare_bessd_container()
         self._bessd_container.add_layer("upf", self._bessd_pebble_layer, combine=True)
         self._bessd_container.replan()
-        self._execute_bessd_poststart_script()
         self._set_application_status()
         self._update_upf_relation()
+
+    def _prepare_bessd_container(self) -> None:
+        self._set_ran_route()
+        self._set_default_route()
+        self._set_ip_tables()
+        self._execute_bessd_poststart_script()
+
+    def _set_ran_route(self) -> None:
+        process = self._bessd_container.exec(
+            command=["ip", "route", "replace", "192.168.251.0/24", "via", "192.168.252.1"],
+            timeout=30,
+        )
+        try:
+            process.wait_output()
+        except ExecError as e:
+            logger.error("Exited with code %d. Stderr:", e.exit_code)
+            for line in e.stderr.splitlines():
+                logger.error("    %s", line)
+            raise e
+        logger.info("Added ip route for ran")
+
+    def _set_default_route(self) -> None:
+        process = self._bessd_container.exec(
+            command=["ip", "route", "replace", "default", "via", "192.168.250.1", "metric", "110"],
+            timeout=30,
+        )
+        try:
+            process.wait_output()
+        except ExecError as e:
+            logger.error("Exited with code %d. Stderr:", e.exit_code)
+            for line in e.stderr.splitlines():
+                logger.error("    %s", line)
+            raise e
+        logger.info("Added default route")
+
+    def _set_ip_tables(self) -> None:
+        process = self._bessd_container.exec(
+            command=[
+                "iptables",
+                "-I",
+                "OUTPUT",
+                "-p",
+                "icmp",
+                "--icmp-type",
+                "port-unreachable",
+                "-j",
+                "DROP",
+            ],
+            timeout=30,
+        )
+        try:
+            process.wait_output()
+        except ExecError as e:
+            logger.error("Exited with code %d. Stderr:", e.exit_code)
+            for line in e.stderr.splitlines():
+                logger.error("    %s", line)
+            raise e
+        logger.info("Set ip tables")
 
     def _execute_bessd_poststart_script(self) -> None:
         """Execute the bessd-poststart.sh script."""
