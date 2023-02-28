@@ -1,9 +1,14 @@
 """UPF Interface."""
 
+import logging
 from typing import Optional
 
 from ops.charm import CharmBase, CharmEvents, RelationChangedEvent
 from ops.framework import EventBase, EventSource, Object
+from ops.model import ModelError
+
+logger = logging.getLogger(__name__)
+
 
 # The unique Charmhub library identifier, never change it
 LIBID = "5fd461a459654ea0a6a4ea9d059ea75f"
@@ -13,7 +18,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 
 class UPFAvailableEvent(EventBase):
@@ -50,7 +55,11 @@ class UPFProvides(Object):
         """Sets the url for the UPF."""
         relations = self.model.relations[self.relationship_name]
         for relation in relations:
-            relation.data[self.model.app]["url"] = url
+            try:
+                relation.data[self.model.app]["url"] = url
+            except ModelError as e:
+                logger.debug("Error setting N2 relation data: %s", e)
+                continue
 
 
 class UPFRequires(Object):
@@ -84,7 +93,12 @@ class UPFRequires(Object):
         for relation in self.model.relations[self.relationship_name]:
             if not relation.data:
                 continue
-            if not relation.data[relation.app]:
+            try:
+                remote_application_relation_data = relation.data[relation.app]
+            except ModelError as e:
+                logger.debug("Error reading relation data: %s", e)
                 continue
-            return relation.data[relation.app].get("url", None)
+            if not remote_application_relation_data:
+                continue
+            return remote_application_relation_data.get("url", None)
         return None
