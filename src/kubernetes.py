@@ -155,8 +155,8 @@ class Kubernetes:
         statefulset.spec.template.metadata.annotations["k8s.v1.cni.cncf.io/networks"] = json.dumps(
             multus_annotation
         )
-        statefulset.spec.template.spec.containers[1].securityContext.privileged = True
-        statefulset.spec.template.spec.containers[1].securityContext.capabilities = Capabilities(
+        statefulset.spec.template.spec.containers[2].securityContext.privileged = True
+        statefulset.spec.template.spec.containers[2].securityContext.capabilities = Capabilities(
             add=[
                 "NET_ADMIN",
             ]
