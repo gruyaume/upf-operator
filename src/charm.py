@@ -180,6 +180,10 @@ class UPFOperatorCharm(CharmBase):
         if not self._podstart_file_is_written:
             self.unit.status = WaitingStatus("Waiting for podstart file to be written")
             return
+        if not self._kubernetes.statefulset_is_patched(statefulset_name=self.app.name):
+            self.unit.status = WaitingStatus("Waiting for statefulset to be patched")
+            event.defer()
+            return
         self._prepare_bessd_container()
         self._bessd_container.add_layer("upf", self._bessd_pebble_layer, combine=True)
         self._bessd_container.replan()
@@ -265,6 +269,10 @@ class UPFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for routectl container to be ready")
             event.defer()
             return
+        if not self._kubernetes.statefulset_is_patched(statefulset_name=self.app.name):
+            self.unit.status = WaitingStatus("Waiting for statefulset to be patched")
+            event.defer()
+            return
         self._routectl_container.add_layer("routectl", self._routectl_pebble_layer, combine=True)
         self._routectl_container.replan()
         self._set_application_status()
@@ -273,6 +281,10 @@ class UPFOperatorCharm(CharmBase):
         """Handle web Pebble ready event."""
         if not self._web_container.can_connect():
             self.unit.status = WaitingStatus("Waiting for web container to be ready")
+            event.defer()
+            return
+        if not self._kubernetes.statefulset_is_patched(statefulset_name=self.app.name):
+            self.unit.status = WaitingStatus("Waiting for statefulset to be patched")
             event.defer()
             return
         self._web_container.add_layer("web", self._web_pebble_layer, combine=True)
@@ -291,6 +303,10 @@ class UPFOperatorCharm(CharmBase):
             return
         if not self._service_is_running(self._bessd_container, self._bessd_service_name):
             self.unit.status = WaitingStatus("Waiting for bessd service to be running")
+            event.defer()
+            return
+        if not self._kubernetes.statefulset_is_patched(statefulset_name=self.app.name):
+            self.unit.status = WaitingStatus("Waiting for statefulset to be patched")
             event.defer()
             return
         self._pfcp_agent_container.add_layer("pfcp", self._pfcp_agent_pebble_layer, combine=True)

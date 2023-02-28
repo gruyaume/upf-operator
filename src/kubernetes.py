@@ -132,6 +132,7 @@ class Kubernetes:
             None
         """
         if self.statefulset_is_patched(statefulset_name=statefulset_name):
+            print(f"Statefulset {statefulset_name} already patched")
             return
         statefulset = self.client.get(
             res=StatefulSet, name=statefulset_name, namespace=self.namespace
@@ -194,7 +195,8 @@ class Kubernetes:
         if "k8s.v1.cni.cncf.io/networks" not in statefulset.spec.template.metadata.annotations:
             logger.info("Multus annotation not yet added to statefulset")
             return False
-
+        if not statefulset.spec.template.spec.containers[2].securityContext.privileged:
+            return False
         return True
 
     def delete_network_attachment_definitions(self) -> None:
