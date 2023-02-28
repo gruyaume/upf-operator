@@ -35,21 +35,14 @@ class TestCharm(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             self.harness.update_config(key_values=config)
 
-    @patch("ops.model.Container.push", new=Mock())
     @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
     @patch("kubernetes.Kubernetes.patch_statefulset")
-    def test_given_default_config_when_config_changed_then_statefulset_is_patched(
+    def test_given_default_config_when_on_install_then_statefulset_is_patched(
         self,
         patch_statefulset,
         create_network_attachment_definitions,
     ):
-        self.harness.set_can_connect(container="bessd", val=True)
-        config = {
-            "use-sriov": False,
-            "use-hugepages": False,
-        }
-
-        self.harness.update_config(key_values=config)
+        self.harness.charm.on.install.emit()
 
         create_network_attachment_definitions.assert_called_once_with(use_sriov=False)
         patch_statefulset.assert_called_once_with(

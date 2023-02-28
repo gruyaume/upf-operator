@@ -5,6 +5,7 @@
 """Charmed operator for the 5G UPF service."""
 
 import logging
+from typing import Union
 
 from charms.observability_libs.v1.kubernetes_service_patch import KubernetesServicePatch
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
@@ -14,6 +15,7 @@ from lightkube.models.core_v1 import ServicePort
 from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
+    InstallEvent,
     PebbleReadyEvent,
     RelationJoinedEvent,
     RemoveEvent,
@@ -47,6 +49,7 @@ class UPFOperatorCharm(CharmBase):
         self._web_container = self.unit.get_container(self._web_container_name)
         self._pfcp_agent_container = self.unit.get_container(self._pfcp_agent_container_name)
         self._upf_provides = UPFProvides(charm=self, relationship_name="upf")
+        self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.remove, self._on_remove)
         self.framework.observe(self.on.bessd_pebble_ready, self._on_bessd_pebble_ready)
@@ -71,23 +74,31 @@ class UPFOperatorCharm(CharmBase):
             ],
         )
 
-    def _on_config_changed(self, event: ConfigChangedEvent) -> None:
+    def _on_install(self, event: InstallEvent):
         if self._use_sriov:
             raise NotImplementedError("SR-IOV support is not implemented yet")
         if self._use_hugepages:
             raise NotImplementedError("Hugepages support is not implemented yet")
-        if not self._bessd_container.can_connect():
-            self.unit.status = WaitingStatus("Waiting for container to be ready")
-            event.defer()
-            return
-        self._write_config_file(use_sriov=self._use_sriov)
-        self._write_poststart_script()
         self._kubernetes.create_network_attachment_definitions(use_sriov=self._use_sriov)
         self._kubernetes.patch_statefulset(
             statefulset_name=self.app.name,
             use_sriov=self._use_sriov,
             use_hugepages=self._use_hugepages,
         )
+
+    def _on_config_changed(self, event: ConfigChangedEvent) -> None:
+        if self._use_sriov:
+            raise NotImplementedError("SR-IOV support is not implemented yet")
+        if self._use_hugepages:
+            raise NotImplementedError("Hugepages support is not implemented yet")
+        if not self._bessd_container.can_connect():
+            self.unit.status = WaitingStatus("Waiting for bessd container to be ready")
+            event.defer()
+            return
+        self._write_config_file(use_sriov=self._use_sriov)
+        self._write_poststart_script()
+        self._on_bessd_pebble_ready(event)
+        self._on_pfcp_agent_pebble_ready(event)
 
     def _on_remove(self, event: RemoveEvent) -> None:
         """Handle remove event."""
@@ -168,7 +179,7 @@ class UPFOperatorCharm(CharmBase):
         logger.info("Config file is written")
         return True
 
-    def _on_bessd_pebble_ready(self, event: PebbleReadyEvent) -> None:
+    def _on_bessd_pebble_ready(self, event: Union[PebbleReadyEvent, ConfigChangedEvent]) -> None:
         """Handle Pebble ready event."""
         if not self._bessd_container.can_connect():
             self.unit.status = WaitingStatus("Waiting for bessd container to be ready")
@@ -184,9 +195,15 @@ class UPFOperatorCharm(CharmBase):
             self.unit.status = WaitingStatus("Waiting for statefulset to be patched")
             event.defer()
             return
-        self._prepare_bessd_container()
+        try:
+            self._prepare_bessd_container()
+        except ExecError:
+            self.unit.status = WaitingStatus("Waiting to be able to prepare bessd container")
+            event.defer()
+            return
         self._bessd_container.add_layer("upf", self._bessd_pebble_layer, combine=True)
         self._bessd_container.replan()
+        self._execute_bessd_poststart_script()
         self._set_application_status()
         self._update_upf_relation()
 
@@ -194,7 +211,6 @@ class UPFOperatorCharm(CharmBase):
         self._set_ran_route()
         self._set_default_route()
         self._set_ip_tables()
-        self._execute_bessd_poststart_script()
 
     def _set_ran_route(self) -> None:
         process = self._bessd_container.exec(
@@ -254,6 +270,7 @@ class UPFOperatorCharm(CharmBase):
             command=["/bin/bash", "-c", f"{BESSD_CONTAINER_CONFIG_PATH}/bessd-poststart.sh"],
             environment=self._bessd_environment_variables,
         )
+        logger.info("Executing bessd-poststart.sh")
         try:
             process.wait_output()
         except ExecError as e:
@@ -291,7 +308,9 @@ class UPFOperatorCharm(CharmBase):
         self._web_container.replan()
         self._set_application_status()
 
-    def _on_pfcp_agent_pebble_ready(self, event: PebbleReadyEvent) -> None:
+    def _on_pfcp_agent_pebble_ready(
+        self, event: Union[PebbleReadyEvent, ConfigChangedEvent]
+    ) -> None:
         """Handle pfcp agent Pebble ready event."""
         if not self._pfcp_agent_container.can_connect():
             self.unit.status = WaitingStatus("Waiting for pfcp agent container to be ready")
