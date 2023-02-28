@@ -35,21 +35,14 @@ class TestCharm(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             self.harness.update_config(key_values=config)
 
-    @patch("ops.model.Container.push", new=Mock())
     @patch("kubernetes.Kubernetes.create_network_attachment_definitions")
     @patch("kubernetes.Kubernetes.patch_statefulset")
-    def test_given_default_config_when_config_changed_then_statefulset_is_patched(
+    def test_given_default_config_when_on_install_then_statefulset_is_patched(
         self,
         patch_statefulset,
         create_network_attachment_definitions,
     ):
-        self.harness.set_can_connect(container="bessd", val=True)
-        config = {
-            "use-sriov": False,
-            "use-hugepages": False,
-        }
-
-        self.harness.update_config(key_values=config)
+        self.harness.charm.on.install.emit()
 
         create_network_attachment_definitions.assert_called_once_with(use_sriov=False)
         patch_statefulset.assert_called_once_with(
@@ -73,7 +66,7 @@ class TestCharm(unittest.TestCase):
             [
                 call(
                     path="/etc/bess/conf/upf.json",
-                    source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "enable_ue_ip_alloc": false,\n    "http_port": "8080"\n  },\n  "mode": "af_packet",\n  "hwcksum": true,\n  "log_level": "trace",\n  "gtppsc": true,\n  "measure_upf": true,\n  "enable_notify_bess": true,\n  "notify_sockaddr": "/pod-share/notifycp",\n  "max_sessions": 50000,\n  "measure_flow": false,\n  "qci_qos_config": [\n    {\n      "burst_duration_ms": 10,\n      "cbs": 50000,\n      "ebs": 50000,\n      "pbs": 50000,\n      "priority": 7,\n      "qci": 0\n    }\n  ],\n  "slice_rate_limit_config": {\n    "n3_bps": 1000000000,\n    "n3_burst_bytes": 12500000,\n    "n6_bps": 1000000000,\n    "n6_burst_bytes": 12500000\n  },\n  "table_sizes": {\n    "appQERLookup": 200000,\n    "farLookup": 150000,\n    "pdrLookup": 50000,\n    "sessionQERLookup": 100000\n  },\n  "workers": 1\n}',  # noqa: E501
+                    source='{\n  "access": {\n    "ifname": "access"\n  },\n  "core": {\n    "ifname": "core"\n  },\n  "cpiface": {\n    "dnn": "internet",\n    "enable_ue_ip_alloc": false,\n    "hostname": "upf-operator.whatever.svc.cluster.local",\n    "http_port": "8080",\n    "ue_ip_pool": "172.250.0.0/16"\n  },\n  "enable_notify_bess": true,\n  "gtppsc": true,\n  "hwcksum": true,\n  "log_level": "trace",\n  "max_sessions": 50000,\n  "measure_flow": false,\n  "measure_upf": true,\n  "mode": "af_packet",\n  "notify_sockaddr": "/pod-share/notifycp",\n  "qci_qos_config": [\n    {\n      "burst_duration_ms": 10,\n      "cbs": 50000,\n      "ebs": 50000,\n      "pbs": 50000,\n      "priority": 7,\n      "qci": 0\n    }\n  ],\n  "slice_rate_limit_config": {\n    "n3_bps": 1000000000,\n    "n3_burst_bytes": 12500000,\n    "n6_bps": 1000000000,\n    "n6_burst_bytes": 12500000\n  },\n  "table_sizes": {\n    "appQERLookup": 200000,\n    "farLookup": 150000,\n    "pdrLookup": 50000,\n    "sessionQERLookup": 100000\n  },\n  "workers": 1\n}',  # noqa: E501
                 ),
                 call(
                     path="/etc/bess/conf/bessd-poststart.sh",
@@ -83,12 +76,14 @@ class TestCharm(unittest.TestCase):
             ]
         )
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
     def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_pebble_plan_is_applied(
-        self, patch_exists
+        self, patch_exists, statefulset_is_patched
     ):
         patch_exists.return_value = True
+        statefulset_is_patched.return_value = True
 
         self.harness.container_pebble_ready(container_name="bessd")
 
@@ -107,11 +102,13 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exec")
     @patch("ops.model.Container.exists")
     def test_given_bessd_config_file_is_written_when_bessd_pebble_ready_then_initial_commands_are_executed(
-        self, patch_exists, patch_exec
+        self, patch_exists, patch_exec, statefulset_is_patched
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
 
         self.harness.container_pebble_ready(container_name="bessd")
@@ -160,10 +157,12 @@ class TestCharm(unittest.TestCase):
             ],
         )
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exists")
     def test_given_can_connect_when_routectl_pebble_ready_then_pebble_plan_is_applied(
-        self, patch_exists
+        self, patch_exists, statefulset_is_patched
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
 
         self.harness.container_pebble_ready(container_name="routectl")
@@ -183,10 +182,12 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exists")
     def test_given_can_connect_when_web_pebble_ready_then_pebble_plan_is_applied(
-        self, patch_exists
+        self, patch_exists, statefulset_is_patched
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
 
         self.harness.container_pebble_ready(container_name="web")
@@ -205,12 +206,15 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
     def test_given_bessd_service_is_running_when_pfcp_agent_pebble_ready_then_pebble_plan_is_applied(  # noqa: E501
         self,
         patch_exists,
+        statefulset_is_patched,
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
         self.harness.container_pebble_ready(container_name="bessd")
 
@@ -230,11 +234,13 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(expected_plan, updated_plan)
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
     def test_given_config_file_is_written_and_all_services_are_running_when_pebble_ready_then_status_is_active(  # noqa: E501
-        self, patch_exists
+        self, patch_exists, statefulset_is_patched
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
 
         self.harness.container_pebble_ready("bessd")
@@ -244,11 +250,13 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
 
+    @patch("kubernetes.Kubernetes.statefulset_is_patched")
     @patch("ops.model.Container.exec", new=Mock())
     @patch("ops.model.Container.exists")
     def test_given_bessd_service_is_running_when_upf_relation_joins_then_upf_info_is_added_to_relation_data(  # noqa: E501
-        self, patch_exists
+        self, patch_exists, statefulset_is_patched
     ):
+        statefulset_is_patched.return_value = True
         patch_exists.return_value = True
         self.harness.set_leader(is_leader=True)
         self.harness.container_pebble_ready(container_name="bessd")

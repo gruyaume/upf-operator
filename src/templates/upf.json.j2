@@ -7,19 +7,20 @@
   },
   "cpiface": {
     "dnn": "internet",
-    "hostname": "{{ upf_hostname }}",
     "enable_ue_ip_alloc": false,
-    "http_port": "8080"
+    "hostname": "{{ upf_hostname }}",
+    "http_port": "8080",
+    "ue_ip_pool": "172.250.0.0/16"
   },
-  "mode": "{{ mode }}",
+  "enable_notify_bess": true,
+  "gtppsc": true,
   "hwcksum": true,
   "log_level": "trace",
-  "gtppsc": true,
-  "measure_upf": true,
-  "enable_notify_bess": true,
-  "notify_sockaddr": "/pod-share/notifycp",
   "max_sessions": 50000,
   "measure_flow": false,
+  "measure_upf": true,
+  "mode": "{{ mode }}",
+  "notify_sockaddr": "/pod-share/notifycp",
   "qci_qos_config": [
     {
       "burst_duration_ms": 10,
